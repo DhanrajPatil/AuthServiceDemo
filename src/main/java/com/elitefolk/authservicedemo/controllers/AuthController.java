@@ -7,12 +7,12 @@ import com.elitefolk.authservicedemo.secutiry.models.CustomUserDetails;
 import com.elitefolk.authservicedemo.services.TokenService;
 import com.elitefolk.authservicedemo.services.UserService;
 import com.elitefolk.authservicedemo.utils.EncodeDecodeUtil;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -39,7 +39,7 @@ public class AuthController {
         if(authHeader == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
         } else {
-            String authHeaderPart = authHeader.substring(6);
+            String authHeaderPart = authHeader.substring(6); // removing Basic word
             String[] authParts = EncodeDecodeUtil.decodeBase64(authHeaderPart).split(":");
             if(authParts.length != 2) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
@@ -51,11 +51,8 @@ public class AuthController {
         if(dto == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
         } else {
-            String token = dto.getToken();
-            HttpHeaders headers = new HttpHeaders();
-            headers.add("Authorization", EncodeDecodeUtil.encodeBase64(token));
             dto.setToken(null);
-            return new ResponseEntity<>(dto, headers, HttpStatus.OK);
+            return new ResponseEntity<>(dto, HttpStatus.OK);
         }
     }
 
@@ -79,20 +76,13 @@ public class AuthController {
                 new UsernamePasswordAuthenticationToken(email, password)
         );
 
-        // Generate token using Spring Authorization Server
+        // Generate token using Spring Authorization Server and embed that token in to Cookie
         String token = tokenService.generateToken(authentication);
+        ResponseCookie jwtCookie = tokenService.embedTokenInCookie(token);
 
-        // Set the token in HTTP-only cookie
-        Cookie cookie = new Cookie("access_token", token);
-        cookie.setHttpOnly(true);
-        cookie.setSecure(false); // Set to true in production (requires HTTPS)
-        cookie.setPath("/");
-        response.addCookie(cookie);
-        cookie.setDomain("localhost"); // Important: Set domain properly
-        cookie.setMaxAge(60 * 4); // 15 minutes token validity
+        response.addHeader(HttpHeaders.SET_COOKIE, jwtCookie.toString());
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         userDetails.setPassword(null);
-
         return ResponseEntity.ok(userDetails);
     }
 
@@ -108,5 +98,19 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
         }
         return ResponseEntity.ok(dto);
+    }
+
+    @PostMapping("/google-login")
+    public ResponseEntity<UserDetailsResponseDto> googleLogin(@RequestHeader("Authorization") String authHeader, HttpServletRequest req) {
+        UserDetailsResponseDto dto = userService.processGoogleLogin(authHeader, req);
+        if(dto == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
+        }
+        String token = dto.getToken();
+        ResponseCookie jwtCookie = tokenService.embedTokenInCookie(token);
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.SET_COOKIE, jwtCookie.toString());
+        dto.setToken(null);
+        return new ResponseEntity(dto, headers, HttpStatus.OK);
     }
 }

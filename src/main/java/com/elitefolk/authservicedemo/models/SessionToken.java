@@ -11,11 +11,8 @@ import lombok.Setter;
 @AllArgsConstructor
 @NoArgsConstructor
 @Entity(name="tokens")
-@Table(indexes = {
-        @Index(name = "token_index", columnList = "token")
-})
 public class SessionToken extends BaseModel {
-    @Column(nullable = false, length = 500)
+    @Column(nullable = false, length = 1500)
     private String token;
 
     @ManyToOne

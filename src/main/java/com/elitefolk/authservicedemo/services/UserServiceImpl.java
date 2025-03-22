@@ -2,20 +2,24 @@ package com.elitefolk.authservicedemo.services;
 
 import com.elitefolk.authservicedemo.dtos.UserDetailsRequestDto;
 import com.elitefolk.authservicedemo.dtos.UserDetailsResponseDto;
+import com.elitefolk.authservicedemo.exceptions.UserAlreadyExistsException;
 import com.elitefolk.authservicedemo.exceptions.UserDoesNotExistException;
-import com.elitefolk.authservicedemo.models.SessionToken;
-import com.elitefolk.authservicedemo.models.SessionTokenStatus;
-import com.elitefolk.authservicedemo.models.TokenData;
-import com.elitefolk.authservicedemo.models.User;
+import com.elitefolk.authservicedemo.models.*;
 import com.elitefolk.authservicedemo.repositories.SessionTokenRepository;
 import com.elitefolk.authservicedemo.repositories.UserRepository;
 import com.elitefolk.authservicedemo.utils.ClientInfoUtil;
 import com.elitefolk.authservicedemo.utils.EncodeDecodeUtil;
 import com.elitefolk.authservicedemo.utils.TokenGeneratorUtil;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -23,25 +27,39 @@ public class UserServiceImpl implements UserService {
     private UserRepository userRepo;
     private SessionTokenRepository sessionTokenRepo;
     private PasswordEncoder passwordEncoder;
+    private GoogleAuthService googleAuthService;
+    private TokenService tokenService;
+    AuthenticationManager authenticationManager;
 
     public UserServiceImpl(UserRepository userRepo,
                            SessionTokenRepository sessionTokenRepo,
-                           PasswordEncoder passwordEncoder) {
+                           PasswordEncoder passwordEncoder,
+                           GoogleAuthService googleAuthService,
+                           TokenService tokenService,
+                           AuthenticationManager authenticationManager) {
         this.userRepo = userRepo;
         this.sessionTokenRepo = sessionTokenRepo;
         this.passwordEncoder = passwordEncoder;
+        this.googleAuthService = googleAuthService;
+        this.tokenService = tokenService;
+        this.authenticationManager = authenticationManager;
     }
 
     @Transactional
     @Override
     public UserDetailsResponseDto createUser(UserDetailsRequestDto userDetailsRequestDto, HttpServletRequest req) {
         User user = userDetailsRequestDto.toUser();
+        String email = user.getEmail();
+        String mobileNumber = user.getMobileNumber();
+        if(userRepo.existsByEmail(email) ){
+            throw new UserAlreadyExistsException(email);
+        }
+        if(userRepo.existsByMobileNumber(mobileNumber)){
+            throw new UserAlreadyExistsException(mobileNumber);
+        }
         user.setPassword(passwordEncoder.encode(userDetailsRequestDto.getPassword()));
         user = userRepo.save(user);
-        SessionToken sessionToken = createNewActiveSessionToken(user, req);
-        sessionTokenRepo.save(sessionToken);
         UserDetailsResponseDto dto = UserDetailsResponseDto.fromUser(user);
-        dto.setToken(sessionToken.getToken());
         return dto;
     }
 
@@ -86,10 +104,12 @@ public class UserServiceImpl implements UserService {
         return null;
     }
 
+    @Transactional
     public SessionToken createNewActiveSessionToken(User user, HttpServletRequest req){
         SessionToken sessionToken = new SessionToken();
         sessionToken.setUser(user);
-        String token = TokenGeneratorUtil.generateTokenForUser(user);
+        Authentication authentication = new UsernamePasswordAuthenticationToken(user.getEmail(), user.getPassword());
+        String token = tokenService.generateToken(authentication);
         String userAgent = ClientInfoUtil.getBrowserId(req);
         String ipAddress = ClientInfoUtil.getClientIp(req);
         String device = ClientInfoUtil.getMachineId();
@@ -132,5 +152,33 @@ public class UserServiceImpl implements UserService {
             return true;
         }
         return false;
+    }
+
+    @Override
+    @Transactional
+    public UserDetailsResponseDto processGoogleLogin(String token, HttpServletRequest req) {
+        token = token.substring(7);
+        GoogleIdToken.Payload payload = googleAuthService.verifyGoogleToken(token);
+        if(payload == null){
+            return null;
+        } else {
+            String email = payload.getEmail();
+            User user = userRepo.findByEmail(email).orElse(null);
+            if(user == null){
+                user = new User();
+                user.setEmail(email);
+                user.setFirstName((String) payload.get("given_name"));
+                user.setLastName((String) payload.get("family_name"));
+                user.setRoles(List.of(new Role("USER")));
+                user.setPassword(passwordEncoder.encode("GoogleOAuth2_0_Login"));
+                user = userRepo.save(user);
+            }
+            SessionToken sessionToken = createNewActiveSessionToken(user, req);
+            sessionTokenRepo.save(sessionToken);
+            UserDetailsResponseDto dto = UserDetailsResponseDto.fromUser(user);
+            dto.setToken(sessionToken.getToken());
+            return dto;
+
+        }
     }
 }

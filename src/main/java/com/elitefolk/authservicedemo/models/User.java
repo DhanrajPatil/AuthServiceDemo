@@ -30,9 +30,9 @@ public class User extends BaseModel{
     @Column(length = 50, nullable = false, unique = true)
     private String email;
 
-    @Column(length = 15, nullable = false, unique = true)
+    @Column(length = 15, unique = true)
     private String mobileNumber;
 
-    @OneToMany(fetch = FetchType.EAGER, cascade = CascadeType.REMOVE)
+    @OneToMany(fetch = FetchType.EAGER, cascade = {CascadeType.PERSIST})
     private List<Role> roles;
 }

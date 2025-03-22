@@ -83,11 +83,14 @@ public class SecurityConfig {
 			throws Exception {
 		http
 			.cors(cors -> cors.configurationSource(corsConfigurationSource()))
-			.csrf(csrf -> csrf.ignoringRequestMatchers("/auth/login", "/auth/signup"))
+			.csrf(csrf -> csrf.ignoringRequestMatchers("/auth/login",
+					"/auth/signup", "/.well-known/jwks.json", "/auth/google-login"))
 			.authorizeHttpRequests((authorize) -> authorize
-				.requestMatchers(HttpMethod.POST, "auth/login").permitAll()
-				.requestMatchers(HttpMethod.POST, "auth/signup").permitAll()
-				.anyRequest().authenticated()
+					.requestMatchers(HttpMethod.POST, "auth/login").permitAll()
+					.requestMatchers(HttpMethod.POST, "auth/signup").permitAll()
+					.requestMatchers(HttpMethod.POST,"auth/google-login").permitAll()
+					.requestMatchers(HttpMethod.GET, ".well-known/jwks.json").permitAll()
+					.anyRequest().authenticated()
 			)
 				.formLogin(Customizer.withDefaults());
 
@@ -97,7 +100,7 @@ public class SecurityConfig {
 	@Bean
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
-		configuration.setAllowedOrigins(Arrays.asList("http://localhost:4200"));
+		configuration.setAllowedOrigins(Arrays.asList("https://elitefolk.tech", "http://localhost:4200"));
 		configuration.setAllowedMethods(Arrays.asList("*"));
 		configuration.setAllowedHeaders(Arrays.asList("*"));
 		configuration.setAllowCredentials(true);
@@ -148,10 +151,6 @@ public class SecurityConfig {
 			KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
 			keyPairGenerator.initialize(2048);
 			keyPair = keyPairGenerator.generateKeyPair();
-			RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
-			System.out.println("Public Key: " + java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded()));
-			RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
-			System.out.println("Private Key: " + java.util.Base64.getEncoder().encodeToString(privateKey.getEncoded()));
 		}
 		catch (Exception ex) {
 			throw new IllegalStateException(ex);

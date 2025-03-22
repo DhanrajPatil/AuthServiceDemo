@@ -1,7 +1,6 @@
 package com.elitefolk.authservicedemo.services;
 
-import com.elitefolk.authservicedemo.secutiry.models.CustomGrantedAuthority;
-import com.elitefolk.authservicedemo.secutiry.models.CustomUserDetails;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -9,7 +8,9 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+
 
 @Service
 public class TokenService {
@@ -23,19 +24,34 @@ public class TokenService {
     public String generateToken(Authentication authentication) {
         Instant now = Instant.now();
         String username = authentication.getName();
-        CustomUserDetails details = (CustomUserDetails) authentication.getPrincipal();
-        List<String> roles = details.getAuthorities().stream().map(CustomGrantedAuthority::getAuthority).toList();
-
+        List<String> roles = new ArrayList<>();
+        if(authentication.getAuthorities().isEmpty()) {
+            roles = List.of("User");
+        } else {
+            roles = authentication.getAuthorities().stream().map(a -> a.getAuthority()).toList();
+        }
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer("self")
                 .subject(username)
                 .audience(List.of("film-rental-service", "product-service", "auth-service"))
-                .claim("name", details.getName())
+                .claim("name", username)
                 .claim("roles", roles)
                 .issuedAt(now)
-                .expiresAt(now.plusSeconds(180)) // 3 minutes
+                .expiresAt(now.plusSeconds(300)) // 5 minutes
                 .build();
 
         return jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
+    }
+
+    public ResponseCookie embedTokenInCookie(String token) {
+        ResponseCookie jwtCookie = ResponseCookie.from("access_token", token)
+                .httpOnly(true)
+                .secure(true)  // Required for SameSite=None
+                .domain("localhost") // Ensures subdomains can access it
+                .path("/")
+                .sameSite("None")  // Required for cross-origin requests
+                .maxAge(300)  // 5 minutes
+                .build();
+        return jwtCookie;
     }
 }
